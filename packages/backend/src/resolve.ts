@@ -10,6 +10,27 @@ const AUDIO_DIR = process.env.AUDIO_DIR || path.resolve('data/audio');
 /** party tracks are capped at 5 minutes */
 export const MAX_TRACK_DURATION_SEC = 300;
 
+/**
+ * YTDLP_PROXY включает туннель (напр. http://vpn-gateway:12334).
+ * Без него yt-dlp ходит напрямую и намеренно НЕ наследует HTTP_PROXY контейнера:
+ * googlevideo подписывает URL под IP запросившего, смешивать пути нельзя.
+ */
+function ytdlpEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.HTTP_PROXY;
+  delete env.HTTPS_PROXY;
+  delete env.http_proxy;
+  delete env.https_proxy;
+  const proxy = process.env.YTDLP_PROXY?.trim();
+  if (proxy) {
+    env.HTTP_PROXY = proxy;
+    env.HTTPS_PROXY = proxy;
+    env.http_proxy = proxy;
+    env.https_proxy = proxy;
+  }
+  return env;
+}
+
 export interface ResolvedAudio {
   title: string;
   artist?: string;
@@ -22,9 +43,14 @@ export interface ResolvedAudio {
   source: 'youtube' | 'search' | 'direct';
 }
 
-function run(cmd: string, args: string[], timeoutMs = 90_000): Promise<{ code: number; stdout: string; stderr: string }> {
+function run(
+  cmd: string,
+  args: string[],
+  timeoutMs = 90_000,
+  env?: NodeJS.ProcessEnv
+): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { windowsHide: true });
+    const child = spawn(cmd, args, { windowsHide: true, ...(env ? { env } : {}) });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {
@@ -171,7 +197,7 @@ export async function resolveAndDownload(
     target
   );
 
-  const { code, stdout, stderr } = await run(YTDLP, args);
+  const { code, stdout, stderr } = await run(YTDLP, args, 90_000, ytdlpEnv());
   // 101 = --max-downloads hit; still a success if we printed a filepath
   const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const hasFile = lines.some((l) => /\.[a-z0-9]{2,5}$/i.test(l));

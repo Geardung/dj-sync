@@ -5,9 +5,30 @@ const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
 /** party tracks are capped at 5 minutes */
 export const MAX_TRACK_DURATION_SEC = 300;
 
+/**
+ * YTDLP_PROXY включает туннель (напр. http://vpn-gateway:12334).
+ * Без него yt-dlp ходит напрямую и намеренно НЕ наследует HTTP_PROXY контейнера:
+ * googlevideo подписывает URL под IP запросившего, смешивать пути нельзя.
+ */
+function ytdlpEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.HTTP_PROXY;
+  delete env.HTTPS_PROXY;
+  delete env.http_proxy;
+  delete env.https_proxy;
+  const proxy = process.env.YTDLP_PROXY?.trim();
+  if (proxy) {
+    env.HTTP_PROXY = proxy;
+    env.HTTPS_PROXY = proxy;
+    env.http_proxy = proxy;
+    env.https_proxy = proxy;
+  }
+  return env;
+}
+
 function runYtdlp(args: string[], timeoutMs = 20_000): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(YTDLP, args, { windowsHide: true });
+    const child = spawn(YTDLP, args, { windowsHide: true, env: ytdlpEnv() });
     let stdout = '';
     let stderr = '';
     const timer = setTimeout(() => {

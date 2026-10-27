@@ -24,11 +24,10 @@ services:
     environment:
       PORT: 3000
       HOST: 0.0.0.0
-      # yt-dlp (python) хватает эти env и гоняет весь свой трафик через VPN.
-      # Node-клиенты (fetch, aws-sdk, grammy) их игнорируют — S3 и боты идут напрямую.
-      HTTP_PROXY: http://vpn-gateway:12334
-      HTTPS_PROXY: http://vpn-gateway:12334
-      NO_PROXY: localhost,127.0.0.1,backend,web,caddy,telegram-bot,vk-bot
+      # туннель для yt-dlp выключен по умолчанию: скорость без него та же,
+      # а смешивание IP (страница через VPN, файл напрямую) даёт 403 у googlevideo.
+      # включить: YTDLP_PROXY=http://vpn-gateway:12334 в .env
+      YTDLP_PROXY: ${YTDLP_PROXY:-}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8088}
       BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
       AUDIO_DIR: /data/audio
