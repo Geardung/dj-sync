@@ -248,11 +248,12 @@ export function App() {
     return { queueIndex: res.queueIndex, queueTotal: res.queueTotal };
   };
 
-  const handleUploadPhoto = async (file: File) => {
+  const handleUploadPhoto = async (file: File, onProgress?: (pct: number) => void) => {
     await uploadPhoto({
       file,
       guestId: guest?.guestId,
       uploadedBy: guest?.nickname || 'гость',
+      onProgress,
     });
   };
 

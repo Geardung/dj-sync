@@ -43,6 +43,43 @@ export function SearchAdd({
     return () => window.removeEventListener('dj-search-collapse', collapse);
   }, []);
 
+  // while the input is focused, expose keyboard inset + visual viewport height
+  // so the results panel can sit above the on-screen keyboard (iOS overlays it)
+  useEffect(() => {
+    const root = document.documentElement;
+    if (!focused) {
+      root.style.removeProperty('--kb-inset');
+      root.style.removeProperty('--vv-height');
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const inset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      root.style.setProperty('--kb-inset', `${inset}px`);
+      root.style.setProperty('--vv-height', `${vv.height}px`);
+    };
+    update();
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => {
+      vv.removeEventListener('resize', update);
+      vv.removeEventListener('scroll', update);
+      root.style.removeProperty('--kb-inset');
+      root.style.removeProperty('--vv-height');
+    };
+  }, [focused]);
+
+  // after the keyboard opens / results arrive, pin the search zone to the
+  // document bottom so the whole panel lands above the keyboard
+  useEffect(() => {
+    if (!focused) return;
+    const t = window.setTimeout(() => {
+      window.scrollTo({ top: document.documentElement.scrollHeight });
+    }, 320);
+    return () => window.clearTimeout(t);
+  }, [focused, phase, hits.length]);
+
   useEffect(() => {
     const query = q.trim();
     if (timer.current) window.clearTimeout(timer.current);

@@ -1,4 +1,17 @@
 services:
+  vpn-gateway:
+    image: ghcr.io/f-normies/glueless:latest
+    container_name: dj-sync-vpn-gateway
+    cap_add:
+      - NET_ADMIN
+    volumes:
+      - ./proxy-config.json:/hiddify/proxy-config.json
+      - ./hiddify-config.json:/hiddify/hiddify-config.json
+    ports:
+      # открытый HTTP-прокси — только на localhost, не на весь LAN
+      - "127.0.0.1:12334:12334"
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -6,9 +19,16 @@ services:
     container_name: dj-sync-backend
     ports:
       - "3000:3000"
+    depends_on:
+      - vpn-gateway
     environment:
       PORT: 3000
       HOST: 0.0.0.0
+      # yt-dlp (python) хватает эти env и гоняет весь свой трафик через VPN.
+      # Node-клиенты (fetch, aws-sdk, grammy) их игнорируют — S3 и боты идут напрямую.
+      HTTP_PROXY: http://vpn-gateway:12334
+      HTTPS_PROXY: http://vpn-gateway:12334
+      NO_PROXY: localhost,127.0.0.1,backend,web,caddy,telegram-bot,vk-bot
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8088}
       BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
       AUDIO_DIR: /data/audio

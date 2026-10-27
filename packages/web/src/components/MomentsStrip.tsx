@@ -95,16 +95,43 @@ function MomentViewer({ photo }: { photo: PartyPhoto }) {
   return <img src={src} alt="" />;
 }
 
+type PendingUpload = {
+  id: number;
+  previewUrl: string;
+  kind: 'image' | 'video';
+  progress: number;
+  status: 'uploading' | 'done' | 'error';
+};
+
 export function MomentsStrip({
   photos,
   onUpload,
 }: {
   photos: PartyPhoto[];
-  onUpload: (file: File) => Promise<void>;
+  onUpload: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<PendingUpload | null>(null);
   const [viewer, setViewer] = useState<PartyPhoto | null>(null);
+  const pendingRef = useRef<PendingUpload | null>(null);
+
+  const clearPending = (item: PendingUpload, delay: number) => {
+    window.setTimeout(() => {
+      setPending((p) => (p && p.id === item.id ? null : p));
+      URL.revokeObjectURL(item.previewUrl);
+    }, delay);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (pendingRef.current) URL.revokeObjectURL(pendingRef.current.previewUrl);
+    };
+  }, []);
+
+  useEffect(() => {
+    pendingRef.current = pending;
+  }, [pending]);
 
   const visible = photos.slice(0, 4);
   const extra = photos.length - visible.length;
@@ -112,8 +139,24 @@ export function MomentsStrip({
   const pick = async (file: File | undefined) => {
     if (!file || busy) return;
     setBusy(true);
+    const item: PendingUpload = {
+      id: Date.now(),
+      previewUrl: URL.createObjectURL(file),
+      kind: file.type.startsWith('video') ? 'video' : 'image',
+      progress: 0,
+      status: 'uploading',
+    };
+    pendingRef.current = item;
+    setPending(item);
     try {
-      await onUpload(file);
+      await onUpload(file, (pct) => {
+        setPending((p) => (p && p.id === item.id ? { ...p, progress: pct } : p));
+      });
+      setPending((p) => (p && p.id === item.id ? { ...p, progress: 100, status: 'done' } : p));
+      clearPending(item, 900);
+    } catch {
+      setPending((p) => (p && p.id === item.id ? { ...p, status: 'error' } : p));
+      clearPending(item, 2400);
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
@@ -124,6 +167,31 @@ export function MomentsStrip({
     <div className="moments">
       <div className="moments-lab">моменты</div>
       <div className="strip">
+        {pending && (
+          <div
+            className={`strip-ph strip-pending ${pending.status}`}
+            aria-busy={pending.status === 'uploading'}
+            title={
+              pending.status === 'uploading'
+                ? `Загрузка ${pending.progress}%`
+                : pending.status === 'done'
+                  ? 'Загружено'
+                  : 'Ошибка загрузки'
+            }
+          >
+            {pending.kind === 'video' ? (
+              <video src={pending.previewUrl} muted playsInline preload="metadata" />
+            ) : (
+              <img src={pending.previewUrl} alt="" />
+            )}
+            {pending.status === 'uploading' && (
+              <span className="strip-pending-dim" style={{ left: `${pending.progress}%` }} />
+            )}
+            {pending.status === 'uploading' && <span className="strip-spinner" />}
+            {pending.status === 'done' && <span className="strip-pending-ok">✓</span>}
+            {pending.status === 'error' && <span className="strip-pending-err">!</span>}
+          </div>
+        )}
         {visible.map((p) => (
           <button
             key={p.id}

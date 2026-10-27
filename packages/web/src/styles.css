@@ -63,7 +63,8 @@ button {
   max-width: 480px;
   margin: 0 auto;
   min-height: 100dvh;
-  padding: 18px 16px calc(24px + env(safe-area-inset-bottom));
+  /* --kb-inset grows while the soft keyboard is open (set from visualViewport) */
+  padding: 18px 16px calc(24px + env(safe-area-inset-bottom) + var(--kb-inset, 0px));
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -418,6 +419,97 @@ button {
   display: grid;
   place-items: center;
   flex-shrink: 0;
+}
+
+.strip-add:disabled {
+  opacity: 0.4;
+}
+
+/* ——— upload pending: preview + spinner + progress wipe ——— */
+.strip-pending {
+  pointer-events: none;
+}
+
+.strip-pending img,
+.strip-pending video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* dim layer sits over the not-yet-uploaded part; its left edge moves
+   right with the upload percent, so the photo lights up left → right */
+.strip-pending-dim {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(18, 8, 16, 0.66);
+  transition: left 0.25s ease-out;
+}
+
+.strip-pending.done .strip-pending-dim,
+.strip-pending.error .strip-pending-dim {
+  display: none;
+}
+
+.strip-spinner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  border: 2px solid rgba(248, 240, 230, 0.22);
+  border-top-color: var(--accent-2);
+  animation: spin 0.75s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.strip-pending.done img,
+.strip-pending.done video,
+.strip-pending.error img,
+.strip-pending.error video {
+  filter: brightness(0.55);
+}
+
+.strip-pending.done {
+  box-shadow: inset 0 0 0 1px rgba(61, 220, 151, 0.55);
+}
+
+.strip-pending.error {
+  box-shadow: inset 0 0 0 1px rgba(255, 92, 122, 0.6);
+}
+
+.strip-pending-ok,
+.strip-pending-err {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: #0d1a14;
+  background: var(--ok);
+  animation: status-pop 0.25s ease-out;
+}
+
+.strip-pending-err {
+  color: #fff;
+  background: var(--danger);
 }
 
 /* ——— search / add ——— */
@@ -1243,7 +1335,9 @@ button {
 }
 
 .add-zone.expanded .results {
-  max-height: min(42vh, 300px);
+  /* --vv-height tracks the visual viewport (keyboard shrinks it on iOS);
+     fall back to dvh when the var isn't set */
+  max-height: min(calc(var(--vv-height, 100dvh) * 0.42), 300px);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;

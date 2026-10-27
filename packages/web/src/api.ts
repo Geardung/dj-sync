@@ -135,22 +135,46 @@ export async function uploadPhoto(payload: {
   file: File;
   guestId?: string;
   uploadedBy?: string;
-}) {
+  onProgress?: (pct: number) => void;
+}): Promise<{ photo: import('@dj-sync/shared').PartyPhoto }> {
   // S3-провайдер не реализует PutBucketCors (501), поэтому браузер не может
   // делать PUT напрямую в бакет. Всегда грузим через API — backend кладёт в S3.
+  // XHR вместо fetch: только у него есть upload.onprogress для процентов.
   const form = new FormData();
   form.append('file', payload.file);
   if (payload.guestId) form.append('guestId', payload.guestId);
   if (payload.uploadedBy) form.append('uploadedBy', payload.uploadedBy);
-  const res = await fetch(`${API_BASE}/api/photos`, {
-    method: 'POST',
-    body: form,
+
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_BASE}/api/photos`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && e.total > 0) {
+        payload.onProgress?.(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as { photo: import('@dj-sync/shared').PartyPhoto });
+        } catch {
+          reject(new Error('upload failed'));
+        }
+      } else {
+        let msg = 'upload failed';
+        try {
+          const err = JSON.parse(xhr.responseText) as { error?: string };
+          if (err.error) msg = err.error;
+        } catch {
+          /* keep default */
+        }
+        reject(new Error(msg));
+      }
+    };
+    xhr.onerror = () => reject(new Error('upload failed'));
+    xhr.onabort = () => reject(new Error('upload aborted'));
+    xhr.send(form);
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'upload failed' }));
-    throw new Error(err.error || 'upload failed');
-  }
-  return res.json() as Promise<{ photo: import('@dj-sync/shared').PartyPhoto }>;
 }
 
 export async function deletePhoto(id: string) {

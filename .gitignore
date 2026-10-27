@@ -13,6 +13,10 @@ coverage/
 .env.*
 !.env.example
 
+# VPN gateway configs (subscription tokens / proxy creds)
+proxy-config.json
+hiddify-config.json
+
 # Runtime data (guest uploads, photos, caches)
 data/
 

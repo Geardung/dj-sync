@@ -21,7 +21,7 @@ export function GuestHome({
   onVote: () => void;
   onSubmitUrl: (url: string) => Promise<{ queueIndex?: number; queueTotal?: number } | void>;
   onSubmitTitle: (title: string) => Promise<{ queueIndex?: number; queueTotal?: number } | void>;
-  onUploadPhoto: (file: File) => Promise<void>;
+  onUploadPhoto: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
 }) {
   const track = state?.current ?? null;
   const isLoFi = Boolean(track?.isFallback);

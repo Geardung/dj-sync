@@ -27,7 +27,7 @@ export function AdminHome({
   getPlayer: () => PartyPlayer;
   onCommand: (action: string, extra?: Record<string, unknown>) => void;
   onHello: () => void;
-  onUploadPhoto: (file: File) => Promise<void>;
+  onUploadPhoto: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
   onDeletePhoto: (id: string) => void;
   onMove: (id: string, dir: 'up' | 'down') => void;
   onRemove: (id: string) => void;
