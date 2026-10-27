@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+.vite/
+coverage/
+*.tsbuildinfo
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Runtime data (guest uploads, photos, caches)
+data/
+
+# Large / local media
+*.mp3
+*.weba
+*.webm
+*.wav
+*.m4a
+*.flac
+*.ogg
+*.aac
+
+# Logs
+*.log
+logs/
+
+# One-off local scripts (hardcoded local paths)
+scripts/fix_*.py
+
+# Tooling / agent state
+.mimocode/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini

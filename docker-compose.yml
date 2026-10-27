@@ -1,0 +1,98 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    container_name: dj-sync-backend
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      HOST: 0.0.0.0
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8088}
+      BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
+      AUDIO_DIR: /data/audio
+      YTDLP_BIN: yt-dlp
+      PHOTOS_DIR: /data/photos
+      IMG_DIR: /app/assets
+      S3_ENDPOINT: ${S3_ENDPOINT:-https://s3.buckets.ru}
+      S3_REGION: ${S3_REGION:-ru-1}
+      S3_BUCKET: ${S3_BUCKET:-dj-assets}
+      S3_PUBLIC_BASE: ${S3_PUBLIC_BASE:-https://00e467bc8c80730d53b4523a0080793d.bckt.ru}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-1}
+    volumes:
+      - ./data/audio:/data/audio
+      - ./data/photos:/data/photos
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  telegram-bot:
+    build:
+      context: .
+      dockerfile: packages/telegram-bot/Dockerfile
+    container_name: dj-sync-telegram-bot
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      API_URL: http://backend:3000
+      WEB_APP_URL: ${WEB_APP_URL:-http://localhost:8088}
+      BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["telegram"]
+
+  vk-bot:
+    build:
+      context: .
+      dockerfile: packages/vk-bot/Dockerfile
+    container_name: dj-sync-vk-bot
+    environment:
+      VK_GROUP_TOKEN: ${VK_GROUP_TOKEN:-}
+      VK_GROUP_ID: ${VK_GROUP_ID:-}
+      API_URL: http://backend:3000
+      BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    profiles: ["vk"]
+
+  web:
+    build:
+      context: .
+      dockerfile: packages/web/Dockerfile
+      args:
+        VITE_API_URL: ""
+    container_name: dj-sync-web
+    ports:
+      - "8088:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2.10-alpine
+    container_name: dj-sync-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-dj.tedeshi.ru}
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:
