@@ -1,14 +1,14 @@
 services:
   vpn-gateway:
-    image: ghcr.io/f-normies/glueless:latest
+    # чистый Xray-core: официальный клиент с поддержкой VLESS Encryption (ML-KEM),
+    # glueless со своим старым HiddifyCli этот режим не умеет
+    image: ghcr.io/xtls/xray-core:latest
     container_name: dj-sync-vpn-gateway
-    cap_add:
-      - NET_ADMIN
+    command: ["run", "-config", "/etc/xray/proxy-config.json"]
     volumes:
-      - ./proxy-config.json:/hiddify/proxy-config.json
-      - ./hiddify-config.json:/hiddify/hiddify-config.json
+      - ./proxy-config.json:/etc/xray/proxy-config.json:ro
     ports:
-      # открытый HTTP-прокси — только на localhost, не на весь LAN
+      # открытый HTTP/SOCKS-прокси — только на localhost, не на весь LAN
       - "127.0.0.1:12334:12334"
     restart: unless-stopped
 
