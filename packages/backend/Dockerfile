@@ -37,8 +37,7 @@ COPY packages/shared/src packages/shared/src
 COPY --from=build /app/packages/backend/dist packages/backend/dist
 COPY --from=build /app/node_modules node_modules
 
-# ambient lo-fi playlist (single file, looped when the guest queue is empty)
-COPY assets/lo-fi-halloween.mp3 /data/audio/lo-fi-halloween.mp3
+# cover art for the ambient track (the mix itself comes from LOFI_URL on S3)
 COPY assets/lofi-cover.jpg /app/assets/lofi-cover.jpg
 
 RUN mkdir -p /data/audio /data/photos
