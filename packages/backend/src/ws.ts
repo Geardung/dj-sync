@@ -57,6 +57,8 @@ export function registerWs(app: FastifyInstance) {
       } catch {
         return;
       }
+      // any traffic counts as presence
+      if (client.guestId) store.touch(client.guestId);
       handleMessage(client, msg);
     });
 
@@ -99,6 +101,14 @@ export function registerWs(app: FastifyInstance) {
       lastPaused = false;
       const pos = cur.isFallback ? state.ambientPosition : 0;
       pushToPlayers({ type: 'player:play', track: cur, position: pos });
+      // personal heads-up: "your track is on air"
+      if (!cur.isFallback && cur.requestedByGuestId && cur.requestedBy) {
+        notifyGuestToast(
+          cur.requestedByGuestId,
+          'success',
+          `Твой трек в эфире: ${cur.title}`
+        );
+      }
     }
 
     // pause / resume transitions
@@ -198,6 +208,18 @@ function handleMessage(client: Client, msg: ClientMessage) {
 
 export function notifyToast(level: 'info' | 'error' | 'success', text: string) {
   broadcast({ type: 'toast', level, text });
+}
+
+/** Toast visible only to one guest's connected tabs. */
+export function notifyGuestToast(guestId: string, level: 'info' | 'error' | 'success', text: string) {
+  broadcast({ type: 'toast', level, text }, (c) => c.guestId === guestId);
+}
+
+/** Refresh presence for every guest with a live socket (so TTL prune never drops them). */
+export function touchConnectedGuests() {
+  for (const c of clients) {
+    if (c.guestId) store.touch(c.guestId);
+  }
 }
 
 export function notifyPhoto(photo: PartyPhoto) {

@@ -7,6 +7,7 @@ import type {
   TrackSource,
 } from '@dj-sync/shared';
 import { skipThreshold } from '@dj-sync/shared';
+import type { StoreSnapshot } from './persist.js';
 
 interface Guest {
   id: string;
@@ -57,6 +58,20 @@ export class PartyStore {
   touch(guestId: string) {
     const g = this.guests.get(guestId);
     if (g) g.lastSeenAt = Date.now();
+  }
+
+  /** Drop guests not seen for ttlMs — keeps skip threshold honest. Returns removed count. */
+  pruneStaleGuests(ttlMs: number): number {
+    const cutoff = Date.now() - ttlMs;
+    let removed = 0;
+    for (const [id, g] of this.guests) {
+      if (g.lastSeenAt < cutoff) {
+        this.guests.delete(id);
+        removed += 1;
+      }
+    }
+    if (removed > 0) this.emit();
+    return removed;
   }
 
   getGuest(guestId: string): Guest | undefined {
@@ -291,6 +306,21 @@ export class PartyStore {
     return this.votesState();
   }
 
+  /** Toggle a guest's like on a track anywhere in play history. Returns new likedBy or null. */
+  toggleLike(trackId: string, guestId: string, like: boolean): string[] | null {
+    const t =
+      this.queue.find((x) => x.id === trackId) ||
+      (this.current?.id === trackId ? this.current : null) ||
+      this.recent.find((x) => x.id === trackId);
+    if (!t || t.isFallback) return null;
+    const liked = new Set(t.likedBy ?? []);
+    if (like) liked.add(guestId);
+    else liked.delete(guestId);
+    t.likedBy = [...liked];
+    this.emit();
+    return t.likedBy;
+  }
+
   votesState(): SkipVoteState {
     const activeGuests = Math.max(this.guests.size, 1);
     const threshold = skipThreshold(activeGuests);
@@ -435,6 +465,47 @@ export class PartyStore {
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  /** Serializable snapshot for persistence — skips transient vote state. */
+  snapshot(): StoreSnapshot {
+    return {
+      version: 1,
+      savedAt: Date.now(),
+      queue: this.queue.map((t) => ({ ...t })),
+      current: this.current ? { ...this.current } : null,
+      recent: this.recent.map((t) => ({ ...t })),
+      guests: [...this.guests.values()].map((g) => ({ ...g })),
+      volume: this.volume,
+      paused: this.paused,
+      position: this.position,
+      fallbackEnabled: this.fallbackEnabled,
+      ambientPosition: this.ambientPosition,
+      queueLimit: this.queueLimit,
+      maxDurationSec: this.maxDurationSec,
+      photos: this.photos.map((p) => ({ ...p })),
+    };
+  }
+
+  /** Restore a snapshot saved before a restart. Emits once at the end. */
+  restore(snap: StoreSnapshot): void {
+    this.queue = snap.queue.map((t) => ({ ...t }));
+    // a track that was mid-play before restart resumes from its last position
+    this.current = snap.current ? { ...snap.current } : null;
+    if (this.current && (this.current.status === 'playing' || this.current.status === 'paused')) {
+      this.position = snap.position || 0;
+    }
+    this.recent = snap.recent.map((t) => ({ ...t }));
+    this.guests = new Map(snap.guests.map((g) => [g.id, { ...g }]));
+    this.volume = snap.volume;
+    this.paused = snap.paused;
+    this.fallbackEnabled = snap.fallbackEnabled;
+    this.ambientPosition = snap.ambientPosition;
+    this.queueLimit = snap.queueLimit;
+    this.maxDurationSec = snap.maxDurationSec;
+    this.photos = snap.photos.map((p) => ({ ...p }));
+    this.votes.clear();
+    this.emit();
   }
 
   emit() {
