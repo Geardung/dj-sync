@@ -27,6 +27,8 @@ export interface Track {
   startedAt?: number | null;
   /** true for ambient lo-fi filler while the guest queue is empty */
   isFallback?: boolean;
+  /** guestIds that liked this track */
+  likedBy?: string[];
 }
 
 export interface SkipVoteState {

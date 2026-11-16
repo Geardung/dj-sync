@@ -5,6 +5,7 @@ import {
   playerCommand,
   submitTrack,
   voteSkip,
+  likeTrack,
   uploadPhoto,
   deletePhoto,
   audioUrl,
@@ -236,6 +237,11 @@ export function App() {
     }
   };
 
+  const handleLike = (trackId: string, like: boolean) => {
+    if (!guest) return;
+    void likeTrack(trackId, guest.guestId, like).catch(() => {});
+  };
+
   const handleSubmitUrl = async (url: string) => {
     if (!guest) return;
     const res = await submitTrack({ url, guestId: guest.guestId, requestedBy: guest.nickname });
@@ -265,7 +271,7 @@ export function App() {
       <header className="top">
         <div className="brand">
           <h1>ТУСОВКА</h1>
-          <div className="sub">{isAdmin ? 'пульt' : ''}</div>
+          <div className="sub">{isAdmin ? 'пульт' : ''}</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {!isAdmin && guest && (
@@ -399,7 +405,9 @@ export function App() {
             activeGuests: state?.votes.activeGuests ?? 1,
             voted,
           }}
+          guestId={guest?.guestId}
           onVote={handleVote}
+          onLike={handleLike}
           onSubmitUrl={handleSubmitUrl}
           onSubmitTitle={handleSubmitTitle}
           onUploadPhoto={handleUploadPhoto}

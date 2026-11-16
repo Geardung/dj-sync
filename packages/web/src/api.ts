@@ -1,5 +1,30 @@
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) || '';
 
+const ADMIN_TOKEN_KEY = 'dj-sync.admin-token';
+
+export function getAdminToken(): string {
+  try {
+    return localStorage.getItem(ADMIN_TOKEN_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+export function setAdminToken(token: string) {
+  try {
+    if (token) localStorage.setItem(ADMIN_TOKEN_KEY, token);
+    else localStorage.removeItem(ADMIN_TOKEN_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Headers for admin-only endpoints (queue edit, player control, photo delete). */
+function adminHeaders(): Record<string, string> {
+  const t = getAdminToken();
+  return t ? { 'x-admin-token': t } : {};
+}
+
 export function apiBase(): string {
   return API_BASE;
 }
@@ -87,10 +112,20 @@ export async function voteSkip(guestId: string, action: 'vote' | 'unvote' = 'vot
   return res.json();
 }
 
+export async function likeTrack(trackId: string, guestId: string, like: boolean) {
+  const res = await fetch(`${API_BASE}/api/tracks/${encodeURIComponent(trackId)}/like`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ guestId, like }),
+  });
+  if (!res.ok) throw new Error('like failed');
+  return res.json() as Promise<{ likedBy: string[] }>;
+}
+
 export async function playerCommand(action: string, extra?: Record<string, unknown>) {
   const res = await fetch(`${API_BASE}/api/player/command`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...adminHeaders() },
     body: JSON.stringify({ action, ...extra }),
   });
   return res.json();
@@ -99,6 +134,7 @@ export async function playerCommand(action: string, extra?: Record<string, unkno
 export async function removeTrack(id: string) {
   const res = await fetch(`${API_BASE}/api/tracks/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    headers: adminHeaders(),
   });
   if (!res.ok) throw new Error('remove failed');
   return res.json();
@@ -107,7 +143,7 @@ export async function removeTrack(id: string) {
 export async function moveTrack(id: string, dir: 'up' | 'down') {
   const res = await fetch(`${API_BASE}/api/tracks/${encodeURIComponent(id)}/move`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...adminHeaders() },
     body: JSON.stringify({ dir }),
   });
   if (!res.ok) throw new Error('move failed');
@@ -117,6 +153,7 @@ export async function moveTrack(id: string, dir: 'up' | 'down') {
 export async function playTrackNow(id: string) {
   const res = await fetch(`${API_BASE}/api/tracks/${encodeURIComponent(id)}/play`, {
     method: 'POST',
+    headers: adminHeaders(),
   });
   if (!res.ok) throw new Error('play failed');
   return res.json();
@@ -180,6 +217,7 @@ export async function uploadPhoto(payload: {
 export async function deletePhoto(id: string) {
   const res = await fetch(`${API_BASE}/api/photos/${encodeURIComponent(id)}`, {
     method: 'DELETE',
+    headers: adminHeaders(),
   });
   return res.ok;
 }

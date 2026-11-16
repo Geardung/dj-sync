@@ -9,7 +9,9 @@ export function GuestHome({
   position,
   audioLevel = 0,
   votes,
+  guestId,
   onVote,
+  onLike,
   onSubmitUrl,
   onSubmitTitle,
   onUploadPhoto,
@@ -18,13 +20,17 @@ export function GuestHome({
   position: number;
   audioLevel?: number;
   votes: { count: number; activeGuests: number; voted: boolean };
+  guestId?: string;
   onVote: () => void;
+  onLike: (trackId: string, like: boolean) => void;
   onSubmitUrl: (url: string) => Promise<{ queueIndex?: number; queueTotal?: number } | void>;
   onSubmitTitle: (title: string) => Promise<{ queueIndex?: number; queueTotal?: number } | void>;
   onUploadPhoto: (file: File, onProgress?: (pct: number) => void) => Promise<void>;
 }) {
   const track = state?.current ?? null;
   const isLoFi = Boolean(track?.isFallback);
+  const liked = Boolean(guestId && track?.likedBy?.includes(guestId));
+  const likeCount = track?.likedBy?.length ?? 0;
   const [lofiMoment, setLofiMoment] = useState<import('@dj-sync/shared').PartyPhoto | null>(null);
 
   // during Lo-Fi show random moments (photos / short videos) instead of the plain cover
@@ -81,6 +87,18 @@ export function GuestHome({
             ) : (
               <div className="cover-fallback" />
             )}
+            <button
+              type="button"
+              className={`like-btn${liked ? ' liked' : ''}`}
+              onClick={() => {
+                if (track && guestId) onLike(track.id, !liked);
+              }}
+              disabled={!track || isLoFi || !guestId}
+              title="Лайк треку"
+            >
+              <span className="lbl">{liked ? '♥' : '♡'}</span>
+              <span className="votes">{likeCount > 0 ? likeCount : ''}</span>
+            </button>
             <button
               type="button"
               className={`skip-btn${votes.voted ? ' voted' : ''}`}
