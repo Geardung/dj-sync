@@ -30,6 +30,7 @@ services:
       YTDLP_PROXY: ${YTDLP_PROXY:-}
       WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8088}
       BOT_SHARED_TOKEN: ${BOT_SHARED_TOKEN:-change-me}
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       AUDIO_DIR: /data/audio
       YTDLP_BIN: yt-dlp
       PHOTOS_DIR: /data/photos

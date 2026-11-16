@@ -42,6 +42,13 @@ export function usePartySocket(opts: {
     let closed = false;
     let retry = 0;
     let timer: number | undefined;
+    // keep-alive: server TTL-prunes guests not seen for a while
+    const pingTimer = window.setInterval(() => {
+      const ws = socketRef.current;
+      if (ws?.readyState === WebSocket.OPEN && optsRef.current.guestId) {
+        ws.send(JSON.stringify({ type: 'guest:ping' } satisfies ClientMessage));
+      }
+    }, 25_000);
 
     const connect = () => {
       const ws = new WebSocket(wsUrl());
@@ -111,6 +118,7 @@ export function usePartySocket(opts: {
     return () => {
       closed = true;
       if (timer) window.clearTimeout(timer);
+      window.clearInterval(pingTimer);
       socketRef.current?.close();
       socketRef.current = null;
     };

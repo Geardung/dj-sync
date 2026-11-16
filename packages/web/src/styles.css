@@ -283,6 +283,63 @@ button {
   color: var(--ink);
 }
 
+.like-btn {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 56px;
+  padding: 11px 0 9px;
+  border-radius: 14px;
+  background: rgba(20, 10, 28, 0.58);
+  border: 1px solid rgba(255, 170, 80, 0.28);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  transition:
+    transform 0.12s ease,
+    background 0.15s ease;
+}
+
+.like-btn:active {
+  transform: translateY(-50%) scale(0.95);
+}
+
+.like-btn:disabled {
+  opacity: 0.35;
+}
+
+.like-btn.liked {
+  background: rgba(255, 122, 24, 0.28);
+  border-color: rgba(255, 154, 61, 0.65);
+}
+
+.like-btn .lbl {
+  font-size: 1.05rem;
+  line-height: 1;
+  color: var(--accent-2);
+}
+
+.like-btn.liked .lbl {
+  color: var(--ink);
+}
+
+.like-btn .votes {
+  font-size: 0.78rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-2);
+  min-height: 1rem;
+}
+
+.like-btn.liked .votes {
+  color: var(--ink);
+}
+
 .progress-wrap {
   width: min(320px, 78vw);
   margin-top: 18px;

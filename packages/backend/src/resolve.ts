@@ -1,35 +1,13 @@
-import { spawn } from 'node:child_process';
 import { nanoid } from 'nanoid';
 import path from 'node:path';
 import fs from 'node:fs/promises';
+import { MAX_TRACK_DURATION_SEC } from '@dj-sync/shared';
 import { normalizeAudio } from './normalize.js';
 import { mirrorRemoteImage, s3Enabled, makeKey, uploadBuffer } from './s3.js';
+import { YTDLP, ytdlpEnv, runProcess } from './ytdlp.js';
 
-const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
 const AUDIO_DIR = process.env.AUDIO_DIR || path.resolve('data/audio');
-/** party tracks are capped at 5 minutes */
-export const MAX_TRACK_DURATION_SEC = 300;
-
-/**
- * YTDLP_PROXY включает туннель (напр. http://vpn-gateway:12334).
- * Без него yt-dlp ходит напрямую и намеренно НЕ наследует HTTP_PROXY контейнера:
- * googlevideo подписывает URL под IP запросившего, смешивать пути нельзя.
- */
-function ytdlpEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.HTTP_PROXY;
-  delete env.HTTPS_PROXY;
-  delete env.http_proxy;
-  delete env.https_proxy;
-  const proxy = process.env.YTDLP_PROXY?.trim();
-  if (proxy) {
-    env.HTTP_PROXY = proxy;
-    env.HTTPS_PROXY = proxy;
-    env.http_proxy = proxy;
-    env.https_proxy = proxy;
-  }
-  return env;
-}
+export { MAX_TRACK_DURATION_SEC };
 
 export interface ResolvedAudio {
   title: string;
@@ -41,37 +19,6 @@ export interface ResolvedAudio {
   audioUrl: string;
   origin: string;
   source: 'youtube' | 'search' | 'direct';
-}
-
-function run(
-  cmd: string,
-  args: string[],
-  timeoutMs = 90_000,
-  env?: NodeJS.ProcessEnv
-): Promise<{ code: number; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { windowsHide: true, ...(env ? { env } : {}) });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new Error(`${cmd} timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    child.stdout.on('data', (d) => {
-      stdout += String(d);
-    });
-    child.stderr.on('data', (d) => {
-      stderr += String(d);
-    });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({ code: code ?? -1, stdout, stderr });
-    });
-  });
 }
 
 function isYoutubeUrl(raw: string): boolean {
@@ -197,14 +144,18 @@ export async function resolveAndDownload(
     target
   );
 
-  const { code, stdout, stderr } = await run(YTDLP, args, 90_000, ytdlpEnv());
+  const { code, stdout, stderr } = await runProcess(YTDLP, args, 90_000, ytdlpEnv());
   // 101 = --max-downloads hit; still a success if we printed a filepath
   const lines = stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const hasFile = lines.some((l) => /\.[a-z0-9]{2,5}$/i.test(l));
   if (code !== 0 && !(code === 101 && hasFile)) {
     const msg = stderr.slice(-400) || stdout.slice(-400) || 'unknown';
     if (/duration/i.test(msg) || /Filter/i.test(msg)) {
-      throw new Error('Трек длиннее 5 минут — на тусовке только короткие');
+      throw new Error(
+        maxDur > 0
+          ? `Трек длиннее ${Math.floor(maxDur / 60)} мин — на тусовке только короткие`
+          : 'Трек не прошёл фильтр длительности'
+      );
     }
     throw new Error(`yt-dlp failed: ${msg}`);
   }
@@ -284,7 +235,7 @@ export async function saveUploadedFile(
   // best-effort duration check via ffprobe (optional)
   let durationSec: number | null = null;
   try {
-    const { stdout } = await run(
+    const { stdout } = await runProcess(
       process.env.FFPROBE_BIN || 'ffprobe',
       ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', abs],
       15_000

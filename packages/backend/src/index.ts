@@ -16,7 +16,7 @@ import type {
 import { store } from './store.js';
 import { audioDir, resolveAndDownload, saveUploadedFile } from './resolve.js';
 import { FallbackPlayer } from './fallback.js';
-import { notifyPhoto, notifyToast, registerWs, requestPlayerPlay } from './ws.js';
+import { notifyPhoto, notifyToast, registerWs, requestPlayerPlay, touchConnectedGuests } from './ws.js';
 import {
   ensurePhotosDir,
   photosDir,
@@ -28,6 +28,15 @@ import {
 } from './photos.js';
 import { searchTracks } from './search.js';
 import { s3Enabled } from './s3.js';
+import { loadSnapshot, scheduleSave, flushSave } from './persist.js';
+import { SlidingWindow } from './rateLimit.js';
+
+/** submissions per guest per window — generous for a party, tight for spam */
+const trackLimiter = new SlidingWindow(6, 5 * 60_000);
+/** photo uploads per guest per window */
+const photoLimiter = new SlidingWindow(20, 5 * 60_000);
+/** guests not seen for this long are pruned from the listener count */
+const GUEST_TTL_MS = 10 * 60_000;
 
 const fallback = new FallbackPlayer(store);
 store.onNeedFallbackPlay(() => {
@@ -42,6 +51,11 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || '0.0.0.0';
 const WEB_ORIGIN = process.env.WEB_ORIGIN || 'http://localhost:8080';
 const BOT_TOKEN = process.env.BOT_SHARED_TOKEN || '';
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+
+if (!ADMIN_TOKEN) {
+  console.warn('[auth] ADMIN_TOKEN is not set — admin endpoints are OPEN. Set it in .env for parties on untrusted networks.');
+}
 
 const app = Fastify({ logger: true });
 
@@ -56,7 +70,21 @@ await app.register(websocket);
 
 fs.mkdirSync(audioDir(), { recursive: true });
 await ensurePhotosDir();
-store.setPhotos(await loadPhotosFromDisk());
+
+// restore party state saved before a restart; fall back to a disk photo scan
+const snap = loadSnapshot();
+if (snap) {
+  store.restore(snap);
+} else {
+  store.setPhotos(await loadPhotosFromDisk());
+}
+store.onChange(() => scheduleSave(store.snapshot()));
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.on(sig, () => {
+    flushSave(store.snapshot());
+    process.exit(0);
+  });
+}
 
 await app.register(fastifyStatic, {
   root: audioDir(),
@@ -85,6 +113,36 @@ function requireBot(req: { headers: Record<string, unknown> }) {
   return auth === `Bearer ${BOT_TOKEN}` || req.headers['x-bot-token'] === BOT_TOKEN;
 }
 
+/**
+ * Admin actions (queue edit, player control, photo delete) need the admin token
+ * when ADMIN_TOKEN is configured. Bots pass with BOT_SHARED_TOKEN as before.
+ */
+function requireAdmin(req: { headers: Record<string, unknown> }): boolean {
+  if (!ADMIN_TOKEN) return true;
+  const auth = String(req.headers.authorization || '');
+  const bearer = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  const presented =
+    bearer ||
+    String(req.headers['x-admin-token'] || '') ||
+    String(req.headers['x-bot-token'] || '');
+  return presented === ADMIN_TOKEN || (Boolean(BOT_TOKEN) && presented === BOT_TOKEN);
+}
+
+/** Rate-limit key: prefer guest id, fall back to client IP. */
+function rateKey(req: { headers: Record<string, unknown>; ip?: string }, guestId?: string): string {
+  return guestId || (req.headers['x-forwarded-for'] as string) || req.ip || 'anon';
+}
+
+function checkRate(
+  limiter: SlidingWindow,
+  req: { headers: Record<string, unknown>; ip?: string },
+  guestId: string | undefined
+): string | null {
+  const key = rateKey(req, guestId);
+  if (limiter.attempt(key)) return null;
+  return `Слишком часто. Попробуй через ${limiter.retryAfterSec(key)} с.`;
+}
+
 // ---------- REST ----------
 
 app.get('/health', async () => ({ ok: true, now: Date.now() }));
@@ -110,6 +168,7 @@ app.post('/api/tracks', async (req, reply) => {
     let url = '';
     let fileBuf: Buffer | null = null;
     let fileName = '';
+    let requestedBy = '';
 
     for await (const part of parts) {
       if (part.type === 'file') {
@@ -120,15 +179,17 @@ app.post('/api/tracks', async (req, reply) => {
       } else if (part.fieldname === 'url' && typeof part.value === 'string') {
         url = part.value;
       } else if (part.fieldname === 'requestedBy' && typeof part.value === 'string') {
-        title = title; // no-op, keep
+        requestedBy = part.value;
       }
     }
 
-    const requestedBy = 'Web guest';
     // guest identity from query
     const q = req.query as { guestId?: string; requestedBy?: string };
     const guestId = q.guestId;
-    const who = q.requestedBy || requestedBy;
+    const who = q.requestedBy || requestedBy || 'Web guest';
+
+    const limited = checkRate(trackLimiter, req as never, guestId);
+    if (limited) return reply.code(429).send({ error: limited });
 
     if (fileBuf && fileName) {
       if (!store.canAcceptTrack()) {
@@ -174,6 +235,8 @@ app.post('/api/tracks', async (req, reply) => {
   if (!title && !url) {
     return reply.code(400).send({ error: 'title or url required' });
   }
+  const limited = checkRate(trackLimiter, req as never, body.guestId);
+  if (limited) return reply.code(429).send({ error: limited });
   return enqueueResolve(
     {
       url,
@@ -253,7 +316,18 @@ app.post('/api/skip', async (req, reply) => {
   return store.voteSkip(body.guestId);
 });
 
+/** Like / unlike any track (current, upcoming or recent). */
+app.post('/api/tracks/:id/like', async (req, reply) => {
+  const { id } = req.params as { id: string };
+  const body = (req.body ?? {}) as { guestId?: string; like?: boolean };
+  if (!body?.guestId) return reply.code(400).send({ error: 'guestId required' });
+  const likedBy = store.toggleLike(id, body.guestId, body.like !== false);
+  if (!likedBy) return reply.code(404).send({ error: 'track not found' });
+  return { likedBy };
+});
+
 app.delete('/api/tracks/:id', async (req, reply) => {
+  if (!requireAdmin(req as never)) return reply.code(401).send({ error: 'admin token required' });
   const { id } = req.params as { id: string };
   const ok = store.removeTrack(id);
   if (!ok) return reply.code(404).send({ error: 'not found in queue' });
@@ -261,6 +335,7 @@ app.delete('/api/tracks/:id', async (req, reply) => {
 });
 
 app.post('/api/tracks/:id/move', async (req, reply) => {
+  if (!requireAdmin(req as never)) return reply.code(401).send({ error: 'admin token required' });
   const { id } = req.params as { id: string };
   const body = (req.body ?? {}) as { dir?: 'up' | 'down' };
   const dir = body.dir === 'up' || body.dir === 'down' ? body.dir : null;
@@ -271,6 +346,7 @@ app.post('/api/tracks/:id/move', async (req, reply) => {
 });
 
 app.post('/api/tracks/:id/play', async (req, reply) => {
+  if (!requireAdmin(req as never)) return reply.code(401).send({ error: 'admin token required' });
   const { id } = req.params as { id: string };
   const t = store.playTrackNow(id);
   if (!t) return reply.code(404).send({ error: 'not found in queue' });
@@ -279,8 +355,13 @@ app.post('/api/tracks/:id/play', async (req, reply) => {
 });
 
 app.post('/api/player/command', async (req, reply) => {
-  if (!requireBot(req as never) && req.headers.authorization) {
-    // allow web player UI commands without bot token
+  // Web player UI sends no credentials when ADMIN_TOKEN is unset — allowed.
+  // Any presented credential must be valid; with ADMIN_TOKEN set it is required.
+  const hasCreds = Boolean(req.headers.authorization || req.headers['x-admin-token'] || req.headers['x-bot-token']);
+  if (ADMIN_TOKEN) {
+    if (!requireAdmin(req as never)) return reply.code(401).send({ error: 'admin token required' });
+  } else if (hasCreds && !requireBot(req as never)) {
+    return reply.code(401).send({ error: 'unauthorized' });
   }
   const body = req.body as { action: string; volume?: number; trackId?: string };
   switch (body.action) {
@@ -471,6 +552,8 @@ app.post('/api/photos', async (req, reply) => {
     }
   }
   if (!fileBuf) return reply.code(400).send({ error: 'file required' });
+  const limited = checkRate(photoLimiter, req as never, guestId);
+  if (limited) return reply.code(429).send({ error: limited });
   try {
     const photo = await savePhoto(fileName, fileBuf, {
       uploadedBy,
@@ -486,6 +569,7 @@ app.post('/api/photos', async (req, reply) => {
 });
 
 app.delete('/api/photos/:id', async (req, reply) => {
+  if (!requireAdmin(req as never)) return reply.code(401).send({ error: 'admin token required' });
   const { id } = req.params as { id: string };
   const photo = store.listPhotos().find((p) => p.id === id);
   if (!photo) return reply.code(404).send({ error: 'not found' });
@@ -505,5 +589,15 @@ function prettyFromUrl(u: string): string {
 
 await app.listen({ port: PORT, host: HOST });
 app.log.info(`dj-sync backend on ${HOST}:${PORT}`);
+
+// presence: refresh connected sockets, drop ghosts so skip threshold stays honest
+setInterval(() => {
+  touchConnectedGuests();
+  const removed = store.pruneStaleGuests(GUEST_TTL_MS);
+  if (removed > 0) app.log.info(`pruned ${removed} stale guest(s)`);
+  trackLimiter.prune();
+  photoLimiter.prune();
+}, 60_000);
+
 // start ambient lo-fi if the guest queue is empty
 void fallback.ensurePlaying();

@@ -63,6 +63,7 @@ docker compose up --build
 | `PORT` | backend | HTTP порт (default 3000) |
 | `WEB_ORIGIN` | backend | CORS origin фронта (default `http://localhost:8088`) |
 | `BOT_SHARED_TOKEN` | backend, боты | общий секрет бот ↔ API |
+| `ADMIN_TOKEN` | backend | ключ админки (управление очередью/плеером), пусто = открыто |
 | `TELEGRAM_BOT_TOKEN` | telegram-bot | токен BotFather |
 | `WEB_APP_URL` | telegram-bot | https-URL Mini App / сайта |
 | `VK_GROUP_TOKEN` | vk-bot | токен сообщества |
@@ -103,11 +104,16 @@ docker compose --profile vk up -d vk-bot
 | POST | `/api/join` | `{nickname, guestId?}` → гость |
 | POST | `/api/tracks` | `{title?, url?}` или multipart file |
 | POST | `/api/skip` | `{guestId, action: vote\|unvote}` |
+| POST | `/api/tracks/:id/like` | `{guestId, like}` — лайк треку |
 | GET | `/api/state` | текущее состояние очереди |
 | POST | `/api/player/command` | pause / resume / skip / volume |
 | GET | `/ws` | WebSocket (guest / player) |
 | POST | `/api/internal/tracks` | от ботов (Bearer `BOT_SHARED_TOKEN`) |
 | POST | `/api/internal/upload` | файл от ботов |
+
+Управляющие ручки (удаление/перемещение треков, `player/command`, удаление фото) при заданном `ADMIN_TOKEN` требуют заголовок `x-admin-token`. Добавление треков и фото ограничено rate-limit (6 треков и 20 фото за 5 минут на гостя).
+
+Состояние очереди сохраняется в `data/state.json` и переживает рестарт backend.
 
 ## Типы клиентов WS
 

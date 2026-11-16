@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { PartyState } from '@dj-sync/shared';
 import type { PartyPlayer } from '../partyPlayer';
+import { getAdminToken, setAdminToken } from '../api';
 import { PlayerMode } from './PlayerMode';
 import { QueueList } from './QueueList';
 import { MomentsStrip } from './MomentsStrip';
@@ -35,6 +37,8 @@ export function AdminHome({
 }) {
   const queueLimit = state?.queueLimit ?? 1;
   const isSpeaker = mode === 'speaker';
+  const [tokenDraft, setTokenDraft] = useState(() => getAdminToken());
+  const [tokenSaved, setTokenSaved] = useState(false);
 
   return (
     <>
@@ -212,6 +216,37 @@ export function AdminHome({
             </button>
           </div>
         )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">Ключ администратора</div>
+        <p className="muted" style={{ marginTop: 0 }}>
+          Нужен для управления очередью и плеером, если на бэкенде задан ADMIN_TOKEN.
+        </p>
+        <div className="field">
+          <input
+            type="password"
+            value={tokenDraft}
+            placeholder="ADMIN_TOKEN"
+            autoComplete="off"
+            onChange={(e) => {
+              setTokenDraft(e.target.value);
+              setTokenSaved(false);
+            }}
+          />
+        </div>
+        <div className="row" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={() => {
+              setAdminToken(tokenDraft.trim());
+              setTokenSaved(true);
+            }}
+          >
+            {tokenSaved ? 'Сохранено' : 'Сохранить'}
+          </button>
+        </div>
       </div>
 
       <a className="btn btn-ghost" href="/" style={{ textDecoration: 'none' }}>

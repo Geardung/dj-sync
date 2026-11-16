@@ -1,0 +1,26 @@
+{
+  "name": "ТУСОВКА — общая очередь",
+  "short_name": "ТУСОВКА",
+  "description": "Общая очередь вечеринки: кидай треки, голосуй за скип, делись моментами",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#120810",
+  "theme_color": "#120810",
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
