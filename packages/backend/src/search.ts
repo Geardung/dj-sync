@@ -1,59 +1,16 @@
-import { spawn } from 'node:child_process';
 import type { SearchHit } from '@dj-sync/shared';
+import { MAX_TRACK_DURATION_SEC } from '@dj-sync/shared';
+import { YTDLP, ytdlpEnv, runProcess } from './ytdlp.js';
 
-const YTDLP = process.env.YTDLP_BIN || 'yt-dlp';
-/** party tracks are capped at 5 minutes */
-export const MAX_TRACK_DURATION_SEC = 300;
-
-/**
- * YTDLP_PROXY включает туннель (напр. http://vpn-gateway:12334).
- * Без него yt-dlp ходит напрямую и намеренно НЕ наследует HTTP_PROXY контейнера:
- * googlevideo подписывает URL под IP запросившего, смешивать пути нельзя.
- */
-function ytdlpEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  delete env.HTTP_PROXY;
-  delete env.HTTPS_PROXY;
-  delete env.http_proxy;
-  delete env.https_proxy;
-  const proxy = process.env.YTDLP_PROXY?.trim();
-  if (proxy) {
-    env.HTTP_PROXY = proxy;
-    env.HTTPS_PROXY = proxy;
-    env.http_proxy = proxy;
-    env.https_proxy = proxy;
-  }
-  return env;
-}
+export { MAX_TRACK_DURATION_SEC };
 
 function runYtdlp(args: string[], timeoutMs = 20_000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(YTDLP, args, { windowsHide: true, env: ytdlpEnv() });
-    let stdout = '';
-    let stderr = '';
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new Error('search timed out'));
-    }, timeoutMs);
-    child.stdout.on('data', (d) => {
-      stdout += String(d);
-    });
-    child.stderr.on('data', (d) => {
-      stderr += String(d);
-    });
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      // yt-dlp exits non-zero on some filter cases; parse what we got
-      if (!stdout.trim() && code !== 0) {
-        reject(new Error(stderr.trim().slice(0, 200) || 'search failed'));
-        return;
-      }
-      resolve(stdout);
-    });
+  return runProcess(YTDLP, args, timeoutMs, ytdlpEnv()).then(({ code, stdout, stderr }) => {
+    // yt-dlp exits non-zero on some filter cases; parse what we got
+    if (!stdout.trim() && code !== 0) {
+      throw new Error(stderr.trim().slice(0, 200) || 'search failed');
+    }
+    return stdout;
   });
 }
 
